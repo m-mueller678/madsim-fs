@@ -1,4 +1,3 @@
-use crate::OpenOptions;
 use atomic_refcell::AtomicRefCell;
 use madsim::plugin::{node, simulator, Simulator};
 use madsim::rand::GlobalRng;
@@ -16,12 +15,10 @@ use std::task::{ready, Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
-#[cfg(madsim)]
 pub struct FsSimulator {
     file_systems: AtomicRefCell<HashMap<NodeId, Arc<Filesystem>>>,
 }
 
-#[cfg(madsim)]
 impl FsSimulator {
     pub fn set_config(&self, node: NodeId, config: FsConfig) {
         *self
@@ -47,11 +44,11 @@ impl FsConfig {
 }
 
 #[derive(Clone)]
-pub struct FileHistory {
+struct FileHistory {
     history: Arc<AtomicRefCell<FileState>>,
 }
 
-pub enum FileState {
+enum FileState {
     Clean(SnapBuf),
     Written {
         old: SnapBuf,
@@ -113,12 +110,12 @@ struct FileSnapshot {
     content: SnapBuf,
 }
 
-pub struct Filesystem {
+struct Filesystem {
     files: AtomicRefCell<HashMap<PathBuf, FileHistory>>,
     config: AtomicRefCell<FsConfig>,
 }
 
-struct FsConfig {
+pub struct FsConfig {
     write_delay: Duration,
     flush_delay: Duration,
     allow_dirty_write: bool,
@@ -164,7 +161,7 @@ impl Simulator for FsSimulator {
     }
 }
 
-pub struct FileHandle {
+pub struct File {
     allow_write: bool,
     allow_read: bool,
     append: bool,
@@ -174,7 +171,7 @@ pub struct FileHandle {
     fs: Arc<Filesystem>,
 }
 
-impl AsyncSeek for FileHandle {
+impl AsyncSeek for File {
     fn start_seek(mut self: Pin<&mut Self>, pos: SeekFrom) -> std::io::Result<()> {
         if self.pending_seek.is_some() {
             return Err(std::io::Error::new(
@@ -208,7 +205,7 @@ impl AsyncSeek for FileHandle {
     }
 }
 
-impl AsyncWrite for FileHandle {
+impl AsyncWrite for File {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -281,7 +278,7 @@ impl AsyncWrite for FileHandle {
     }
 }
 
-impl AsyncRead for FileHandle {
+impl AsyncRead for File {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -304,7 +301,7 @@ impl AsyncRead for FileHandle {
 }
 
 impl OpenOptions {
-    async fn open(&self, p: impl AsRef<Path>) -> Result<FileHandle, Error> {
+    async fn open(&self, p: impl AsRef<Path>) -> Result<File, Error> {
         let sim = simulator::<FsSimulator>();
         let node = node();
         let fs = sim.file_systems.borrow_mut().get(&node).unwrap().clone();
@@ -326,7 +323,7 @@ impl OpenOptions {
                 }
             }
         };
-        let fh = FileHandle {
+        let fh = File {
             allow_read: self.read,
             allow_write: self.write || self.append,
             append: self.append,
@@ -339,5 +336,35 @@ impl OpenOptions {
             *fh.history.history.borrow_mut() = FileState::Clean(SnapBuf::new());
         }
         Ok(fh)
+    }
+}
+
+impl File {
+    pub fn options() -> OpenOptions {
+        OpenOptions::new()
+    }
+}
+
+macro_rules! define_open_options {
+    ($($name:ident),*) => {
+        #[derive(Default)]
+        pub struct OpenOptions{
+            $($name:bool),*
+        }
+
+        impl OpenOptions{
+            $(pub fn $name(&mut self,$name:bool)-> &mut Self{
+                self.$name = $name;
+                self
+            })*
+        }
+    };
+}
+
+define_open_options! {read,write,append,truncate,create,create_new}
+
+impl OpenOptions {
+    pub fn new() -> OpenOptions {
+        Default::default()
     }
 }
