@@ -8,3 +8,6 @@ madsim = {version =  "0.2.31" }
 snap-buf = "0.4.0"
 atomic_refcell="0.1.13"
 tokio = { version = "1.43.0",features = ["fs"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(madsim)'] }
