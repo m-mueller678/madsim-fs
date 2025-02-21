@@ -4,12 +4,13 @@ use std::io::{Error, IoSlice, Result, SeekFrom};
 use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{
-    AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt, ReadBuf,
-};
+use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
 #[cfg(madsim)]
 mod fs;
+
+#[cfg(madsim)]
+pub use fs::FsSimulator;
 
 #[cfg(not(madsim))]
 use tokio::fs;
@@ -92,7 +93,7 @@ impl AsyncWrite for File {
     }
 
     fn is_write_vectored(&self) -> bool {
-        self.project().inner.is_write_vectored()
+        self.inner.is_write_vectored()
     }
 }
 

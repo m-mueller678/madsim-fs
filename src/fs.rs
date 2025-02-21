@@ -64,7 +64,7 @@ enum FileState {
 }
 
 impl FileState {
-    fn new(&self) -> &SnapBuf {
+    fn most_recent(&self) -> &SnapBuf {
         match self {
             FileState::Clean(new)
             | FileState::Written { new, .. }
@@ -79,7 +79,7 @@ impl FileState {
     ) -> Poll<Result<(), Error>> {
         loop {
             match self {
-                FileState::Clean(x) => return Poll::Ready(Ok(())),
+                FileState::Clean(_) => return Poll::Ready(Ok(())),
                 FileState::Written { old, new, time } => {
                     if let Some(sleep) = config.borrow().flush_sleep(*time) {
                         *self = FileState::Flush {
@@ -91,7 +91,7 @@ impl FileState {
                         *self = FileState::Clean(new.clone())
                     }
                 }
-                FileState::Flush { old, new, sleep } => {
+                FileState::Flush { old: _, new, sleep } => {
                     ready!(Pin::new(sleep).poll(cx));
                     *self = FileState::Clean(new.clone());
                     return Poll::Ready(Ok(()));
@@ -99,16 +99,6 @@ impl FileState {
             }
         }
     }
-}
-
-struct FileHistoryEntry {
-    version: u64,
-    written: Instant,
-    file: FileSnapshot,
-}
-
-struct FileSnapshot {
-    content: SnapBuf,
 }
 
 struct Filesystem {
@@ -133,11 +123,13 @@ impl FsConfig {
 }
 
 impl Filesystem {
-    fn reset(&self) {}
+    fn reset(&self) {
+        todo!()
+    }
 }
 
 impl Simulator for FsSimulator {
-    fn new(rand: &GlobalRng, time: &TimeHandle, config: &Config) -> Self
+    fn new(_rand: &GlobalRng, _time: &TimeHandle, _config: &Config) -> Self
     where
         Self: Sized,
     {
@@ -158,7 +150,7 @@ impl Simulator for FsSimulator {
     }
 
     fn reset_node(&self, id: NodeId) {
-        let mut file_systems = self.file_systems.borrow_mut().get_mut(&id).unwrap().reset();
+        self.file_systems.borrow_mut().get_mut(&id).unwrap().reset();
     }
 }
 
@@ -182,7 +174,7 @@ impl AsyncSeek for File {
         }
         let new = match pos {
             SeekFrom::Start(x) => x as i64,
-            SeekFrom::End(x) => self.history.history.borrow().new().len() as i64 + x,
+            SeekFrom::End(x) => self.history.history.borrow().most_recent().len() as i64 + x,
             SeekFrom::Current(x) => self.cursor as i64 + x,
         };
         self.pending_seek = Some(new);
@@ -208,7 +200,7 @@ impl AsyncSeek for File {
 
 impl AsyncWrite for File {
     fn poll_write(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, Error>> {
@@ -236,7 +228,7 @@ impl AsyncWrite for File {
                     };
                     break;
                 }
-                FileState::Written { old, new, time } => {
+                FileState::Written { old: _, new, time } => {
                     if this.fs.config.borrow().allow_dirty_write {
                         if this.append {
                             this.cursor = new.len();
@@ -245,10 +237,10 @@ impl AsyncWrite for File {
                         *time = now;
                         break;
                     } else {
-                        ready!(state.poll_flush(cx, &this.fs.config));
+                        ready!(state.poll_flush(cx, &this.fs.config))?;
                     }
                 }
-                FileState::Flush { old, new, sleep } => {
+                FileState::Flush { old, new, sleep: _ } => {
                     *state = FileState::Written {
                         old: old.clone(),
                         new: new.clone(),
@@ -273,7 +265,7 @@ impl AsyncWrite for File {
 impl AsyncRead for File {
     fn poll_read(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        _cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         let this = Pin::into_inner(self);
@@ -284,7 +276,7 @@ impl AsyncRead for File {
             )));
         }
         let file = this.history.history.borrow();
-        let data = file.new().read(this.cursor);
+        let data = file.most_recent().read(this.cursor);
         let read_len = buf.remaining().min(data.len());
         this.cursor += read_len;
         buf.put_slice(&data[..read_len]);
@@ -303,7 +295,7 @@ impl OpenOptions {
         let fs = sim.file_systems.borrow_mut().get(&node).unwrap().clone();
         let mut files = fs.files.borrow_mut();
         let file = match files.entry(p.as_ref().to_owned()) {
-            hash_map::Entry::Occupied(mut x) => {
+            hash_map::Entry::Occupied(x) => {
                 if self.create_new {
                     return Err(Error::new(ErrorKind::AlreadyExists, "File already exists"));
                 }
