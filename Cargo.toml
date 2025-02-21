@@ -8,6 +8,7 @@ madsim = {version =  "0.2.31" }
 snap-buf = "0.4.0"
 atomic_refcell="0.1.13"
 pin-project-lite = "0.2.16"
+futures = "0.3.31"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(madsim)'] }

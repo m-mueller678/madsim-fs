@@ -6,7 +6,8 @@ use madsim::time::{Sleep, TimeHandle};
 use madsim::Config;
 use snap_buf::SnapBuf;
 use std::collections::{hash_map, HashMap};
-use std::future::Future;
+use std::future::{poll_fn, Future};
+use std::io;
 use std::io::{Error, ErrorKind, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -261,16 +262,7 @@ impl AsyncWrite for File {
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        if !self.allow_write {
-            return Poll::Ready(Err(Error::new(
-                ErrorKind::InvalidInput,
-                "file handle does not allow writes",
-            )));
-        }
-        self.history
-            .history
-            .borrow_mut()
-            .poll_flush(cx, &self.fs.config)
+        self.poll_flush_inner(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
@@ -346,6 +338,27 @@ impl OpenOptions {
 impl File {
     pub fn options() -> OpenOptions {
         OpenOptions::new()
+    }
+
+    pub async fn sync_all(&self) -> io::Result<()> {
+        poll_fn(|cx| self.poll_flush_inner(cx)).await
+    }
+
+    pub async fn sync_data(&self) -> io::Result<()> {
+        self.sync_all().await
+    }
+
+    fn poll_flush_inner(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        if !self.allow_write {
+            return Poll::Ready(Err(Error::new(
+                ErrorKind::InvalidInput,
+                "file handle does not allow writes",
+            )));
+        }
+        self.history
+            .history
+            .borrow_mut()
+            .poll_flush(cx, &self.fs.config)
     }
 }
 

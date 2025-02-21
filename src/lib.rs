@@ -1,4 +1,6 @@
-use std::io::{Error, Result, SeekFrom};
+use futures::FutureExt;
+use madsim::export::futures;
+use std::io::{Error, IoSlice, Result, SeekFrom};
 use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -23,54 +25,74 @@ pin_project_lite::pin_project! {
 }
 
 impl File {
+    fn from_inner(inner: Result<fs::File>) -> Result<Self> {
+        Ok(Self { inner: inner? })
+    }
+
     pub fn options() -> fs::OpenOptions {
         fs::File::options()
     }
 
     pub async fn open(path: impl AsRef<Path>) -> Result<File> {
-        OpenOptions::new().read(true).open(path.as_ref())
+        Self::options()
+            .read(true)
+            .open(path.as_ref())
+            .map(Self::from_inner)
+            .await
     }
 
-    pub fn create(path: impl AsRef<Path>) -> Result<File> {
-        OpenOptions::new()
+    pub async fn create(path: impl AsRef<Path>) -> Result<File> {
+        Self::options()
             .write(true)
             .create(true)
             .truncate(true)
             .open(path.as_ref())
+            .map(Self::from_inner)
+            .await
     }
 
-    pub fn create_new(path: impl AsRef<Path>) -> Result<File> {
-        OpenOptions::new()
+    pub async fn create_new(path: impl AsRef<Path>) -> Result<File> {
+        Self::options()
             .read(true)
             .write(true)
             .create_new(true)
             .open(path.as_ref())
+            .map(Self::from_inner)
+            .await
     }
 
     pub async fn sync_all(&self) -> Result<()> {
-        self.inner.sync_all()
+        self.inner.sync_all().await
     }
 
     pub async fn sync_data(&self) -> Result<()> {
-        self.inner.sync_data()
+        self.inner.sync_data().await
     }
 }
 
 impl AsyncWrite for File {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, Error>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         self.project().inner.poll_write(cx, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         self.project().inner.poll_flush(cx)
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         self.project().inner.poll_shutdown(cx)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[IoSlice<'_>],
+    ) -> Poll<std::result::Result<usize, Error>> {
+        self.project().inner.poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.project().inner.is_write_vectored()
     }
 }
 
