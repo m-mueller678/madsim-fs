@@ -10,7 +10,7 @@ use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 mod fs;
 
 #[cfg(madsim)]
-pub use fs::FsSimulator;
+pub use fs::{FsConfig, FsSimulator};
 
 #[cfg(not(madsim))]
 use tokio::fs;
