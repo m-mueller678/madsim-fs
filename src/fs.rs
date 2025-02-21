@@ -72,6 +72,14 @@ impl FileState {
         }
     }
 
+    fn update(&mut self, now: Instant, config: &FsConfig) {
+        match self {
+            FileState::Clean(_) => {}
+            FileState::Written { old, new, time } => {}
+            FileState::Flush { .. } => {}
+        }
+    }
+
     fn poll_flush(
         &mut self,
         cx: &mut Context<'_>,
@@ -109,6 +117,7 @@ struct Filesystem {
 pub struct FsConfig {
     write_delay: Duration,
     flush_delay: Duration,
+    write_to_flush_delay: Duration,
     allow_dirty_write: bool,
 }
 
@@ -120,11 +129,27 @@ impl FsConfig {
             allow_dirty_write: true,
         }
     }
+
+    fn durable_time(&self, write_time: Instant, flush_time: Option<Instant>) -> Instant {
+        let effective_flush = if let Some(t) = flush_time {
+            t.min(write_time + self.flush_delay)
+        } else {
+            write_time + self.flush_delay
+        };
+        (effective_flush + self.flush_delay).max(write_time + self.write_delay)
+    }
 }
 
 impl Filesystem {
     fn reset(&self) {
-        todo!()
+        for file in self.files.borrow_mut().values_mut() {
+            let state = Arc::get_mut(&mut file.history)
+                .expect("file still opened during reset")
+                .get_mut();
+            match state {
+                FileState::Written { old, new, time } => {}
+            }
+        }
     }
 }
 
