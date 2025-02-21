@@ -1,4 +1,5 @@
-use std::io::{Error, SeekFrom};
+use std::io::{Error, Result, SeekFrom};
+use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{
@@ -24,6 +25,34 @@ pin_project_lite::pin_project! {
 impl File {
     pub fn options() -> fs::OpenOptions {
         fs::File::options()
+    }
+
+    pub async fn open(path: impl AsRef<Path>) -> Result<File> {
+        OpenOptions::new().read(true).open(path.as_ref())
+    }
+
+    pub fn create(path: impl AsRef<Path>) -> Result<File> {
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path.as_ref())
+    }
+
+    pub fn create_new(path: impl AsRef<Path>) -> Result<File> {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(path.as_ref())
+    }
+
+    pub async fn sync_all(&self) -> Result<()> {
+        self.inner.sync_all()
+    }
+
+    pub async fn sync_data(&self) -> Result<()> {
+        self.inner.sync_data()
     }
 }
 

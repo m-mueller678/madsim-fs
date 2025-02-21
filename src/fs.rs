@@ -301,7 +301,11 @@ impl AsyncRead for File {
 }
 
 impl OpenOptions {
-    async fn open(&self, p: impl AsRef<Path>) -> Result<File, Error> {
+    pub fn new() -> OpenOptions {
+        Default::default()
+    }
+
+    pub async fn open(&self, p: impl AsRef<Path>) -> Result<File, Error> {
         let sim = simulator::<FsSimulator>();
         let node = node();
         let fs = sim.file_systems.borrow_mut().get(&node).unwrap().clone();
@@ -362,9 +366,3 @@ macro_rules! define_open_options {
 }
 
 define_open_options! {read,write,append,truncate,create,create_new}
-
-impl OpenOptions {
-    pub fn new() -> OpenOptions {
-        Default::default()
-    }
-}
